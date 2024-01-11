@@ -1,0 +1,50 @@
+---
+title: "SPOT Derivatives"
+author: "C Armour"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include = FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("D:/github_projects/phd_scripts/library_fast.R")
+```
+
+```{r}
+
+## List directories
+
+dirs_all <- list.dirs("D:/mgem_SPOT_test_data", recursive = F, full.names = T)
+
+## Use test data folder and rasterize list of tiles
+tls <- list.files(dirs_all[1], pattern = ".tif$", full.names = T)
+tls_lst <- lapply(tls, FUN = rast)
+
+## Get names of desired functions
+funs <- c("mean", "min", "max", "sd")
+
+## Loop through tiles and desired functions
+
+for(i in 1:length(funs)){
+  
+  for(j in 1:length(tls_lst)){
+    
+    out.dir <- paste0(dirs_all[1], "/", funs[i])
+    
+    if(!dir.exists(out.dir)){
+      dir.create(out.dir)
+    }
+    
+    r_agg <- terra::aggregate(tls_lst[[j]], fact = 3, fun = funs[i])
+    
+    outname <- sources(tls_lst[[j]]) %>%
+      str_split(pattern = "/", simplify = T) %>%
+      .[length(.)] %>%
+      paste0(dirs_all[1], "/", funs[[i]], "/", .)
+    
+    writeRaster(r_agg, filename = outname, overwrite = T, todisk = T)
+  }
+}
+
+```
+
