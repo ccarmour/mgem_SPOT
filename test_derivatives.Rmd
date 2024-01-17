@@ -3,48 +3,177 @@ title: "SPOT Derivatives"
 author: "C Armour"
 date: "`r Sys.Date()`"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include = FALSE, echo = FALSE}
+
 knitr::opts_chunk$set(echo = TRUE)
+
 source("D:/github_projects/phd_scripts/library_fast.R")
+require(tidyterra)
+
+terraOptions(overwrite = T, todisk = T, tempdir = "E:/temp")
+
+```
+
+```{r test-derivatives}
+
+## List directories
+dir_main <- list.dirs("D:/mgem_SPOT_test_data", recursive = F, full.names = T)
+# h = 1
+
+for(h in 1:length(dir_main)){
+  
+  if(!dir.exists(paste0(dir_main[h], "/noisy_derivatives"))){
+    dir.create(paste0(dir_main[h], "/noisy_derivatives"))
+  }
+  
+  ### Create lookup table for each task (files x functions x resolutions)
+  lookup <- expand_grid(dir.in = dir_main[h],
+                        tl = list.files(dir_main[h], pattern = ".tif$", full.names = F),
+                        fun = c("mean", "min", "max", "sd"),
+                        fact = c(3, 5)) %>%
+    mutate(task.no = row_number(),
+           dir.out = case_when(fact == 3 ~ paste0(dir.in, "/", "noisy_derivatives/res_4p5"),
+                               fact == 5 ~ paste0(dir.in, "/","noisy_derivatives/res_7p5"))) %>%
+    relocate(task.no, .before = 1) %>%
+    relocate(dir.out, .after = dir.in)
+  
+  # Make a cluster with a number of cores
+  cl = makeCluster(6)
+  # Load in required packages
+  clusterEvalQ(cl, {library(tidyverse); library(terra); library(magrittr); library(tidyterra)})
+  # Export variables from global environment into each cluster
+  clusterExport(cl, c("lookup"))
+  
+  pblapply(
+    lookup$task.no,
+    cl = cl,
+    FUN = function(j){
+      
+      terraOptions(overwrite = T, todisk = T, tempdir = "E:/temp")
+      
+      task = filter(lookup, task.no == j)
+      
+      if(!dir.exists(task$dir.out)){
+        dir.create(task$dir.out)
+      }
+      
+      in.name <- task$tl %>%
+        paste0(task$dir.in, "/", .)
+      
+      out.name <- task$tl %>%
+        tools::file_path_sans_ext() %>%
+        paste0(task$dir.out, "/", ., "_", task$fun, ".tif")
+      
+      ### Check if file already exists, otherwise, run function
+      if(file.exists(in.name) & !file.exists(out.name)){
+        
+        ### Aggregate to 3x3 cells using desired functions and then write to output dir
+        in.name %>%
+          rast() %>%
+          terra::aggregate(fact = as.integer(task$fact), fun = task$fun) %>%
+          writeRaster(filename = out.name, overwrite = T, datatype = "INT1U")
+        
+      }
+    })
+  
+  # Stop cluster
+  stopCluster(cl)
+  
+  paste0(dir_main[h], " -- completed at ", Sys.time())
+  
+  terra::tmpFiles(remove = T)
+  
+}
+
+
+```
+
+```{r make-noisy-tiles}
+
+start = Sys.time()
+
+## List directories
+dir_main <- list.dirs("D:/mgem_SPOT_test_data", recursive = F, full.names = T)
+# h = 1
+
+if(!dir.exists(paste0(dir_main[h], "/noisy_derivatives"))){
+  dir.create(paste0(dir_main[h], "/noisy_derivatives"))
+}
+
+make_noise <- function(ncells){
+  return(sample(c(-1,1), ncells, replace = T))
+}
+
+for(h in 1:length(dir_main)){
+  
+    ### Create lookup table for each task (files x functions x resolutions)
+  lookup <- expand_grid(dir.in = dir_main[h],
+                        dir.out = paste0(dir_main[h], "/noisy_derivatives"),
+                        tl = list.files(dir_main[h], pattern = ".tif$", full.names = F)) %>%
+    mutate(task.no = row_number()) %>%
+    relocate(task.no, .before = 1)
+  
+  # Make a cluster with a number of cores
+  cl = makeCluster(6)
+  # Load in required packages
+  clusterEvalQ(cl, {library(tidyverse); library(terra); library(magrittr); library(tidyterra)})
+  # Export variables from global environment into each cluster
+  clusterExport(cl, c("make_noise", "lookup"))
+  
+  pblapply(
+    lookup$task.no,
+    cl = cl,
+    FUN = function(j){
+      
+      terraOptions(overwrite = T, todisk = T, tempdir = "E:/temp")
+      
+      task = filter(lookup, task.no == j)
+      
+      in.name <- task$tl %>%
+        paste0(task$dir.in, "/", .)
+
+      out.name <- task$tl %>%
+        paste0(task$dir.out, "/", .)
+      
+      if(!file.exists(out.name)){
+        
+        in.name %>%
+          rast() %>%
+          init(fun = make_noise) %>%
+          c(.,.,.,.) %>%
+          c(rast(in.name), .) %>%
+          tapp(index = c(1,2,3,4,1,2,3,4), fun = sum) %>%
+          clamp(lower = 0, upper = 254, values = T) %>%
+          tidyterra::rename(Channel_1_RED = X1, Channel_2_GRN = X2, Channel_3_BLUE = X3, Channel_4_SWI = X4) %>%
+          writeRaster(filename = out.name, datatype = "INT1U")
+      }
+      
+    })
+  
+  # Stop cluster
+  stopCluster(cl)
+  
+  terra::tmpFiles(remove = T)
+  
+}
+
+Sys.time() - start
+
+
 ```
 
 ```{r}
 
-## List directories
+files <- list.files("E:/mgem_SPOT_data_2", pattern = ".tif$", full.names = T, recursive = T)
 
-dirs_all <- list.dirs("D:/mgem_SPOT_test_data", recursive = F, full.names = T)
+size <- file.size(files)
 
-## Use test data folder and rasterize list of tiles
-tls <- list.files(dirs_all[1], pattern = ".tif$", full.names = T)
-tls_lst <- lapply(tls, FUN = rast)
+```
 
-## Get names of desired functions
-funs <- c("mean", "min", "max", "sd")
-
-## Loop through tiles and desired functions
-
-for(i in 1:length(funs)){
-  
-  for(j in 1:length(tls_lst)){
-    
-    out.dir <- paste0(dirs_all[1], "/", funs[i])
-    
-    if(!dir.exists(out.dir)){
-      dir.create(out.dir)
-    }
-    
-    r_agg <- terra::aggregate(tls_lst[[j]], fact = 3, fun = funs[i])
-    
-    outname <- sources(tls_lst[[j]]) %>%
-      str_split(pattern = "/", simplify = T) %>%
-      .[length(.)] %>%
-      paste0(dirs_all[1], "/", funs[[i]], "/", .)
-    
-    writeRaster(r_agg, filename = outname, overwrite = T, todisk = T)
-  }
-}
 
 ```
 
