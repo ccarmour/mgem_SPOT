@@ -11,8 +11,25 @@ editor_options:
 
 knitr::opts_chunk$set(echo = TRUE)
 
-source("D:/github_projects/phd_scripts/library_fast.R")
+## BASICS
+require(terra)
+require(rgdal)
+require(rgeos)
+require(sf)
+
+## TIDYVERSE
+require(tidyverse)
+require(data.table)
+require(magrittr)
 require(tidyterra)
+
+## PARALLEL PROCESSING
+require(parallel)
+require(pbapply)
+
+## MARKDOWNS
+require(rmarkdown)
+require(knitr)
 
 terraOptions(overwrite = T, todisk = T, tempdir = "E:/temp")
 
@@ -148,7 +165,7 @@ for(h in 1:length(dir_main)){
           c(rast(in.name), .) %>%
           tapp(index = c(1,2,3,4,1,2,3,4), fun = sum) %>%
           clamp(lower = 0, upper = 254, values = T) %>%
-          tidyterra::rename(Channel_1_RED = X1, Channel_2_GRN = X2, Channel_3_BLUE = X3, Channel_4_SWI = X4) %>%
+          tidyterra::rename(Channel_1_RED = X1, Channel_2_GRN = X2, Channel_3_BLUE = X3, Channel_4_NIR = X4) %>%
           writeRaster(filename = out.name, datatype = "INT1U")
       }
       
@@ -165,15 +182,6 @@ Sys.time() - start
 
 
 ```
-
-```{r}
-
-files <- list.files("E:/mgem_SPOT_data_2", pattern = ".tif$", full.names = T, recursive = T)
-
-size <- file.size(files)
-
-```
-
 
 ```
 
