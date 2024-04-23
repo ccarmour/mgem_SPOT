@@ -175,7 +175,8 @@ for(h in 1:length(dir_main)){
   # Stop cluster
   stopCluster(cl)
   
-  paste0(dir_main[h], " -- completed at ", Sys.time())
+  print(paste0(dir_main[h], " -- directory ", h, "/296 completed at ", Sys.time()))
+  write.table(paste0(dir_main[h], " -- directory ", h, " of 296 completed at ", Sys.time()), file = "E:/mgem_SPOT_data_2/progress.txt", append = T, quote = F, col.names = F)
   
   terra::tmpFiles(remove = T)
   
